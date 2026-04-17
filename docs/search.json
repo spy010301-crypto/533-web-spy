@@ -1,0 +1,79 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "",
+    "text": "A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out.\n[main] Starting Donchian breakout backtest.\n[fetch_data] IBKR unreachable (No module named 'ib_insync'); generating synthetic GBM data.\n[main] Train rows: 261  Test rows: 495  Split at 2024-05-25\n[main] Wrote 27 trades. Total PnL $-4817.25\n[main] Artifacts in /Users/shanpeiyuan/533-web-spy/.claude/worktrees/peaceful-sammet/data"
+  },
+  {
+    "objectID": "index.html#strategy-logic",
+    "href": "index.html#strategy-logic",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Strategy Logic",
+    "text": "Strategy Logic\nThe strategy watches a rolling 20-day high/low envelope — the classic Donchian channel — and waits for price to decisively pierce one of the boundaries. A close above the upper band signals that recent resistance has broken, the path of least resistance is up, and we go long the next morning; a close below the lower band does the symmetric thing on the short side. Every trade carries a pre-computed profit target of two ATRs and a stop-loss of one ATR from the entry, giving a 2:1 reward-to-risk geometry; if neither boundary is touched within twenty trading days the position is closed at the market so capital never sits idle in a range-bound trade. Only one position is open at a time, slippage and commission are charged on both legs, and no pyramiding is permitted."
+  },
+  {
+    "objectID": "index.html#asset-selection",
+    "href": "index.html#asset-selection",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Asset Selection",
+    "text": "Asset Selection\nThe candidate universe was an 8-ETF basket spanning equities, bonds, and commodities: SPY, QQQ, IWM, TLT, GLD, USO, XLE, and EEM. For each ETF we counted how many 20-bar Donchian breakouts occurred over a 3-year sample and divided by bar count to get a breakout frequency. GLD screened best: commodities in general showed stronger trending behaviour than equities over this window, and gold specifically produced the cleanest alternation of decisive trends and clear consolidations — exactly the regime that rewards channel breakouts. GLD is also highly liquid (tight spreads, large ADV) so the slippage assumption below is conservative."
+  },
+  {
+    "objectID": "index.html#breakout-definition",
+    "href": "index.html#breakout-definition",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Breakout Definition",
+    "text": "Breakout Definition\nA breakout is defined mechanically so there is zero discretion:\n\nUpper band = highest high of the prior 20 bars (LOOKBACK_PERIOD = 20).\nLower band = lowest low of the prior 20 bars.\nLong signal fires when today’s close &gt; upper band; the trade is filled at the next bar’s open.\nShort signal fires when today’s close &lt; lower band; filled at the next bar’s open.\nATR uses Wilder smoothing over 14 bars (ATR_PERIOD = 14).\nProfit target = entry ± 2.0 × ATR (ATR_MULT = 2.0).\nStop-loss = entry ∓ 1.0 × ATR (STOP_MULT = 1.0).\nTime-out = force-close at the close of bar 20 after entry (MAX_HOLDING_DAYS = 20).\nSize = 100 shares per trade (POSITION_SIZE = 100).\nCosts = 0.1% slippage + 0.1% commission applied on both entry and exit sides.\nRisk-free rate = 5.3% annualised, used for Sharpe / Sortino (RISK_FREE_RATE = 0.053).\n\nAll channel values are shifted by one bar so only prior-bar information is ever used — no peek-ahead."
+  },
+  {
+    "objectID": "index.html#equity-curve",
+    "href": "index.html#equity-curve",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Equity Curve",
+    "text": "Equity Curve\n\n\n\n\n\n\n\n        \n        \n        \n\n\n(a)\n\n\n\n\n\n\n                            \n                                            \n\n\n(b)\n\n\n\n\n\nFigure 1"
+  },
+  {
+    "objectID": "index.html#donchian-channel-chart",
+    "href": "index.html#donchian-channel-chart",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Donchian Channel Chart",
+    "text": "Donchian Channel Chart\n\n\n\n\n                            \n                                            \n\n\nFigure 2"
+  },
+  {
+    "objectID": "index.html#performance-metrics",
+    "href": "index.html#performance-metrics",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Performance Metrics",
+    "text": "Performance Metrics\n\n\n\n\n\nMetric\nValue\nWhat it means\n\n\n\n\nNumber of trades\n27\nTotal completed round-trips in the test window.\n\n\nWin rate\n22.22%\nShare of trades with positive net return after costs.\n\n\nAverage return per trade\n-1.06%\nMean of all trade returns, winners and losers combined.\n\n\nAverage winning trade\n2.88%\nMean return across trades that closed in profit.\n\n\nAverage losing trade\n-2.18%\nMean return across trades that closed at a loss or flat.\n\n\nProfit factor\n0.38\nGross profit divided by gross loss — above 1 is profitable.\n\n\nSharpe ratio (annualised)\n-2.25\nRisk-adjusted return using total equity-curve volatility.\n\n\nSortino ratio (annualised)\n-6.10\nLike Sharpe but penalises only downside volatility.\n\n\nMax drawdown\n$-6063.51\nLargest peak-to-trough equity decline in the test window.\n\n\nTotal PnL\n$-4817.25\nNet dollar profit/loss after slippage and commission."
+  },
+  {
+    "objectID": "index.html#trade-outcome-analysis",
+    "href": "index.html#trade-outcome-analysis",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Trade Outcome Analysis",
+    "text": "Trade Outcome Analysis\nEvery position is forced to close through one of three doors: the profit target (entry ± 2 × ATR), the stop-loss (entry ∓ 1 × ATR), or a time-out after 20 trading days. The stop-loss is tested each bar against the bar’s low (for longs) or high (for shorts); if the stop and the target are both reachable on the same bar, the stop is assumed to fill first — a conservative choice that avoids flattering the numbers.\n\n\n\n\n                            \n                                            \n\n\nFigure 3"
+  },
+  {
+    "objectID": "index.html#trade-blotter",
+    "href": "index.html#trade-blotter",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Trade Blotter",
+    "text": "Trade Blotter"
+  },
+  {
+    "objectID": "index.html#download",
+    "href": "index.html#download",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Download",
+    "text": "Download\n\nDownload trade_blotter.csv"
+  },
+  {
+    "objectID": "index.html#assumptions",
+    "href": "index.html#assumptions",
+    "title": "Donchian Channel Breakout Strategy",
+    "section": "Assumptions",
+    "text": "Assumptions\n\nSlippage: 0.1% of fill price applied on every entry and exit.\nCommission: 0.1% per side, in addition to slippage.\nNo pyramiding: only one position is held at any time; new signals during an open trade are ignored.\nData source: live GLD daily bars from Interactive Brokers TWS (ib_insync); if TWS is unreachable the pipeline falls back to a synthetic GBM series with GLD-like parameters so the site always renders.\nNo dividends: GLD distributions are ignored; returns are price-only.\nWalk-forward: year 1 is used for indicator warm-up, years 2–3 are the out-of-sample test window reported above.\nSingle-instrument: results do not account for portfolio-level diversification or correlation effects."
+  }
+]

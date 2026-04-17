@@ -1,0 +1,132 @@
+/* Donchian Breakout — clean professional theme */
+
+:root {
+  --accent: #1f4e79;
+  --accent-soft: #2d6cb3;
+  --positive: #1f8f5a;
+  --negative: #c0392b;
+  --ink: #1c2833;
+  --muted: #5d6d7e;
+  --surface: #ffffff;
+  --surface-alt: #f4f6f8;
+  --border: #dfe4ea;
+}
+
+body {
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4 {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1.title {
+  font-size: 2.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.subtitle, p.lead {
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+/* Hero block */
+.hero {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
+  color: white;
+  padding: 2.5rem 2rem;
+  border-radius: 10px;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 14px rgba(31, 78, 121, 0.18);
+}
+.hero h1 {
+  color: white;
+  margin: 0 0 0.4rem 0;
+  font-size: 2.2rem;
+}
+.hero p {
+  margin: 0;
+  font-size: 1.1rem;
+  opacity: 0.95;
+}
+
+/* Section spacing */
+section.level2, .section.level2 {
+  margin-top: 2.5rem;
+}
+
+/* Metrics table */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0 1.5rem 0;
+  font-size: 0.95rem;
+}
+table thead th {
+  background: var(--accent);
+  color: white;
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+}
+table tbody td {
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+table tbody tr:nth-child(even) {
+  background: var(--surface-alt);
+}
+
+/* Callout / notes */
+blockquote, .callout-note {
+  border-left: 4px solid var(--accent-soft);
+  background: var(--surface-alt);
+  padding: 0.8rem 1rem;
+  margin: 1rem 0;
+  color: var(--ink);
+}
+
+/* Download button */
+.download-link a {
+  display: inline-block;
+  background: var(--accent);
+  color: white !important;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+.download-link a:hover {
+  background: var(--accent-soft);
+}
+
+/* DataTable styling */
+table.dataTable {
+  font-size: 0.88rem;
+}
+table.dataTable thead th {
+  background: var(--accent) !important;
+  color: white !important;
+}
+
+/* Code blocks */
+pre, code {
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 0.88rem;
+}
+pre {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.9rem;
+}
+
+/* Utility */
+.text-positive { color: var(--positive); font-weight: 600; }
+.text-negative { color: var(--negative); font-weight: 600; }
