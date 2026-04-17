@@ -47,7 +47,11 @@ with open(DATA / "metrics.json") as f:
 
 ## Strategy Logic
 
-The strategy watches a rolling 20-day high/low envelope — the classic Donchian channel — and waits for price to decisively pierce one of the boundaries. A close above the upper band signals that recent resistance has broken, the path of least resistance is up, and we go long the next morning; a close below the lower band does the symmetric thing on the short side. Every trade carries a pre-computed profit target of two ATRs and a stop-loss of one ATR from the entry, giving a 2:1 reward-to-risk geometry; if neither boundary is touched within twenty trading days the position is closed at the market so capital never sits idle in a range-bound trade. Only one position is open at a time, slippage and commission are charged on both legs, and no pyramiding is permitted.
+The strategy watches a rolling 20-day high/low envelope — the classic Donchian channel — and waits for price to decisively pierce one of the boundaries. A close above the upper band signals that recent resistance has broken, the path of least resistance is up, and we go long the next morning; a close below the lower band does the symmetric thing on the short side.
+
+To avoid the biggest failure mode of breakout systems — getting repeatedly stopped out during sideways, choppy tape — every breakout signal is gated by a **dual-moving-average trend filter**. A long entry is only permitted if the 20-day moving average is above the 60-day moving average (a classical uptrend regime); a short entry requires the opposite. This forces short-term breakouts to be in the same direction as the larger trend, cutting out the sideways-market false starts that plague an unfiltered Donchian system.
+
+Every trade carries a pre-computed profit target of two ATRs and a stop-loss of one ATR from the entry, giving a 2:1 reward-to-risk geometry; if neither boundary is touched within twenty trading days the position is closed at the market so capital never sits idle in a range-bound trade. A fourth exit closes the position at the next open if the trend filter flips during the hold (for a long: MA20 crosses below MA60). Only one position is open at a time, slippage and commission are charged on both legs, and no pyramiding is permitted.
 
 ## Asset Selection
 
@@ -65,8 +69,9 @@ A **breakout** is defined mechanically so there is zero discretion:
 
 - **Upper band** = highest high of the prior **20 bars**.
 - **Lower band** = lowest low of the prior **20 bars**.
-- **Long signal** fires when today's close > upper band; the trade is filled at the next bar's open.
-- **Short signal** fires when today's close < lower band; filled at the next bar's open.
+- **Long signal** fires when today's close > upper band **and** the 20-day moving average is above the 60-day moving average; the trade is filled at the next bar's open.
+- **Short signal** fires when today's close < lower band **and** the 20-day moving average is below the 60-day moving average; filled at the next bar's open.
+- **Trend-filter exit**: if the 20-day / 60-day MA relationship flips against the open position at any bar's close, the position is flattened at the next bar's open.
 - **ATR** uses Wilder smoothing over **14 bars**.
 - **Profit target** = entry ± **2.0 × ATR**.
 - **Stop-loss** = entry ∓ **1.0 × ATR**.
@@ -137,6 +142,17 @@ fig.add_trace(go.Scatter(
     mode="lines", name="Donchian Lower",
     line=dict(color="#b33a3a", width=1.2),
 ))
+# Trend filter overlays
+fig.add_trace(go.Scatter(
+    x=px_df["date"], y=px_df["ma_short"],
+    mode="lines", name="MA 20",
+    line=dict(color="#f39c12", width=1, dash="dot"),
+))
+fig.add_trace(go.Scatter(
+    x=px_df["date"], y=px_df["ma_long"],
+    mode="lines", name="MA 60",
+    line=dict(color="#8e44ad", width=1, dash="dot"),
+))
 
 # trade markers within the visible window
 visible_trades = blotter[
@@ -190,7 +206,7 @@ HTML(metrics_df.to_html(index=False, classes="metrics-table", escape=False))
 
 ## Trade Outcome Analysis
 
-Every position is forced to close through one of three doors: the **profit target** (entry ± 2 × ATR), the **stop-loss** (entry ∓ 1 × ATR), or a **time-out** after 20 trading days. The stop-loss is tested each bar against the bar's low (for longs) or high (for shorts); if the stop and the target are both reachable on the same bar, the stop is assumed to fill first — a conservative choice that avoids flattering the numbers.
+Every position is forced to close through one of four doors: the **profit target** (entry ± 2 × ATR), the **stop-loss** (entry ∓ 1 × ATR), a **time-out** after 20 trading days, or a **trend exit** when the 20/60-day moving-average regime flips against the open position. The stop-loss is tested each bar against the bar's low (for longs) or high (for shorts); if the stop and the target are both reachable on the same bar, the stop is assumed to fill first — a conservative choice that avoids flattering the numbers. Trend exits are checked at each bar's close and filled at the next bar's open, so they reflect an order placed overnight after the signal, not an intra-bar reaction.
 
 ```{python}
 #| echo: false
@@ -199,7 +215,7 @@ if blotter.empty:
     print("No trades generated in the test window.")
 else:
     counts = blotter["outcome"].value_counts().reindex(
-        ["Profit target", "Stop-loss", "Time-out"], fill_value=0
+        ["Profit target", "Stop-loss", "Time-out", "Trend exit"], fill_value=0
     ).reset_index()
     counts.columns = ["Outcome", "Count"]
     fig = px.bar(
@@ -209,6 +225,7 @@ else:
             "Profit target": "#1f8f5a",
             "Stop-loss":     "#c0392b",
             "Time-out":      "#5d6d7e",
+            "Trend exit":    "#2d6cb3",
         },
         text="Count",
     )

@@ -42,6 +42,13 @@ RISK_FREE_RATE = 0.053     # annualised, for Sharpe / Sortino
 COMMISSION = 0.001         # 0.1% per side
 SLIPPAGE = 0.001           # 0.1% per side
 
+# Long-term trend filter: require the short MA to sit above the long MA
+# (i.e. classical uptrend) before allowing a long breakout, and symmetric
+# for shorts. If the filter flips while a position is open, the position
+# is flattened at the next bar's open.
+MA_SHORT_PERIOD = 20       # short moving average bars
+MA_LONG_PERIOD  = 60       # long moving average bars
+
 # IBKR connection settings
 IB_HOST = "127.0.0.1"
 IB_PORT = 7496
@@ -176,7 +183,7 @@ def compute_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
 # --------------------------------------------------------------------------- #
 def detect_breakouts(df: pd.DataFrame, lookback: int = LOOKBACK_PERIOD) -> pd.DataFrame:
     """
-    Detect Donchian channel breakouts.
+    Detect Donchian channel breakouts, gated by a dual-MA trend filter.
 
     Given a DataFrame of daily OHLC bars, this function walks through every
     bar and asks a simple question: did today's close punch through the
@@ -192,15 +199,33 @@ def detect_breakouts(df: pd.DataFrame, lookback: int = LOOKBACK_PERIOD) -> pd.Da
     We also attach the Wilder ATR on the same frame; downstream code uses it
     to size profit targets and stop-losses.
 
+    Trend filter
+    ------------
+    To reduce false breakouts during choppy, sideways tape, the long and
+    short signals are gated by a dual moving-average regime check:
+
+      * trend_up   is True when MA(short) > MA(long)  -> classical uptrend
+      * trend_down is True when MA(short) < MA(long)  -> classical downtrend
+
+    Long breakouts fire only during an uptrend; short breakouts only during
+    a downtrend. The MAs are computed on closes and evaluated at the SAME
+    bar as the signal (no extra shift), because they are already backward-
+    looking — they use data available at the bar's close, which is exactly
+    when the breakout itself is observed.
+
     Output columns added:
       donchian_upper   highest high of prior `lookback` bars
       donchian_lower   lowest low  of prior `lookback` bars
       atr              Wilder Average True Range (`ATR_PERIOD`)
-      breakout_long    True when close > donchian_upper (go long signal)
-      breakout_short   True when close < donchian_lower (go short signal)
+      ma_short         `MA_SHORT_PERIOD`-bar SMA of close
+      ma_long          `MA_LONG_PERIOD`-bar SMA of close
+      trend_up         MA_short > MA_long
+      trend_down       MA_short < MA_long
+      breakout_long    close > donchian_upper AND trend_up
+      breakout_short   close < donchian_lower AND trend_down
 
-    The first `lookback` rows have NaN channel values, so their breakout
-    flags are naturally False.
+    The first `max(lookback, MA_LONG_PERIOD)` rows have NaN indicator values,
+    so their breakout flags are naturally False.
     """
     out = df.copy()
     # rolling window of the PRIOR `lookback` bars — shift(1) enforces this
@@ -208,8 +233,16 @@ def detect_breakouts(df: pd.DataFrame, lookback: int = LOOKBACK_PERIOD) -> pd.Da
     out["donchian_lower"] = out["low"].rolling(lookback, min_periods=lookback).min().shift(1)
     out["atr"] = compute_atr(out, ATR_PERIOD)
 
-    out["breakout_long"] = (out["close"] > out["donchian_upper"]).fillna(False)
-    out["breakout_short"] = (out["close"] < out["donchian_lower"]).fillna(False)
+    # Dual-MA trend filter
+    out["ma_short"] = out["close"].rolling(MA_SHORT_PERIOD, min_periods=MA_SHORT_PERIOD).mean()
+    out["ma_long"]  = out["close"].rolling(MA_LONG_PERIOD,  min_periods=MA_LONG_PERIOD).mean()
+    out["trend_up"]   = (out["ma_short"] > out["ma_long"]).fillna(False)
+    out["trend_down"] = (out["ma_short"] < out["ma_long"]).fillna(False)
+
+    raw_long  = (out["close"] > out["donchian_upper"]).fillna(False)
+    raw_short = (out["close"] < out["donchian_lower"]).fillna(False)
+    out["breakout_long"]  = raw_long  & out["trend_up"]
+    out["breakout_short"] = raw_short & out["trend_down"]
     return out
 
 
@@ -223,14 +256,17 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     Rules
     -----
     - Only one position at a time.
-    - Entry: next-day open after a breakout signal (signal observed at today's
-      close; we act on tomorrow's open to stay realistic).
-    - Three possible exits, checked in this order intraday:
-        1. profit target      entry + ATR_MULT * ATR (long)
-                              entry - ATR_MULT * ATR (short)
-        2. stop-loss          entry - STOP_MULT * ATR (long)
-                              entry + STOP_MULT * ATR (short)
-        3. time-out           forced exit at close after MAX_HOLDING_DAYS bars.
+    - Entry: next-day open after a breakout signal that also passes the
+      trend filter (MA_short > MA_long for longs, MA_short < MA_long for
+      shorts). Signal observed at today's close; filled at tomorrow's open.
+    - Four possible exits:
+        1. profit target       entry +/- ATR_MULT * ATR (intraday)
+        2. stop-loss           entry -/+ STOP_MULT * ATR (intraday)
+        3. time-out            forced exit at close after MAX_HOLDING_DAYS
+        4. trend-filter exit   if the MA regime flips against the position
+                               at today's close, flatten at tomorrow's open.
+      Trend-filter exits are processed at the TOP of the next bar, before
+      the intraday target/stop check, because the fill happens at the open.
     - Slippage and commission applied on BOTH entry and exit.
 
     Returns (trade_blotter, equity_curve).
@@ -240,18 +276,51 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     trades = []
 
     in_position = False
-    pos_direction = 0  # +1 long, -1 short
+    pos_direction = 0           # +1 long, -1 short
     entry_idx = -1
     entry_price_raw = 0.0
     entry_price_net = 0.0
     entry_atr = 0.0
     profit_target = 0.0
     stop_loss = 0.0
+    pending_trend_exit = False  # flagged at close of bar i, acted at open of bar i+1
+
+    def _record_trade(exit_row, outcome: str, exit_price_raw: float, held_days: int):
+        """Close the current position, apply costs, append a blotter row."""
+        if pos_direction == 1:
+            exit_price_net = exit_price_raw * (1 - SLIPPAGE) * (1 - COMMISSION)
+        else:
+            exit_price_net = exit_price_raw * (1 + SLIPPAGE) * (1 + COMMISSION)
+        pnl = (exit_price_net - entry_price_net) * POSITION_SIZE * pos_direction
+        trade_return = (exit_price_net / entry_price_net - 1) * pos_direction
+        trades.append(
+            {
+                "entry_date": d.iloc[entry_idx]["date"],
+                "exit_date": exit_row["date"],
+                "entry_price": round(entry_price_net, 4),
+                "exit_price": round(exit_price_net, 4),
+                "quantity": POSITION_SIZE,
+                "direction": "Long" if pos_direction == 1 else "Short",
+                "outcome": outcome,
+                "holding_days": held_days,
+                "pnl": round(pnl, 2),
+                "trade_return": round(trade_return, 5),
+            }
+        )
 
     for i in range(n):
         row = d.iloc[i]
 
-        # Manage open position first
+        # 0. Pending trend-filter exit from yesterday — fill at today's open
+        #    before any target/stop test, because the order goes out pre-open.
+        if in_position and pending_trend_exit:
+            held_days = i - entry_idx
+            _record_trade(row, "Trend exit", float(row["open"]), held_days)
+            in_position = False
+            pos_direction = 0
+            pending_trend_exit = False
+
+        # 1-3. Manage open position: target / stop / timeout
         if in_position:
             held_days = i - entry_idx
             outcome = None
@@ -266,9 +335,7 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             if pos_direction == 1:
                 hit_stop = low <= stop_loss
                 hit_target = high >= profit_target
-                if hit_stop and hit_target:
-                    outcome, exit_price_raw = "Stop-loss", stop_loss
-                elif hit_stop:
+                if hit_stop:
                     outcome, exit_price_raw = "Stop-loss", stop_loss
                 elif hit_target:
                     outcome, exit_price_raw = "Profit target", profit_target
@@ -277,9 +344,7 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             else:  # short
                 hit_stop = high >= stop_loss
                 hit_target = low <= profit_target
-                if hit_stop and hit_target:
-                    outcome, exit_price_raw = "Stop-loss", stop_loss
-                elif hit_stop:
+                if hit_stop:
                     outcome, exit_price_raw = "Stop-loss", stop_loss
                 elif hit_target:
                     outcome, exit_price_raw = "Profit target", profit_target
@@ -287,31 +352,19 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                     outcome, exit_price_raw = "Time-out", close
 
             if outcome is not None:
-                # apply slippage + commission on exit
-                if pos_direction == 1:
-                    exit_price_net = exit_price_raw * (1 - SLIPPAGE) * (1 - COMMISSION)
-                else:
-                    exit_price_net = exit_price_raw * (1 + SLIPPAGE) * (1 + COMMISSION)
-
-                pnl = (exit_price_net - entry_price_net) * POSITION_SIZE * pos_direction
-                trade_return = (exit_price_net / entry_price_net - 1) * pos_direction
-
-                trades.append(
-                    {
-                        "entry_date": d.iloc[entry_idx]["date"],
-                        "exit_date": row["date"],
-                        "entry_price": round(entry_price_net, 4),
-                        "exit_price": round(exit_price_net, 4),
-                        "quantity": POSITION_SIZE,
-                        "direction": "Long" if pos_direction == 1 else "Short",
-                        "outcome": outcome,
-                        "holding_days": held_days,
-                        "pnl": round(pnl, 2),
-                        "trade_return": round(trade_return, 5),
-                    }
-                )
+                _record_trade(row, outcome, float(exit_price_raw), held_days)
                 in_position = False
                 pos_direction = 0
+
+        # 4. Still in position at this bar's close? Check trend filter.
+        #    If the regime flipped against us, flag for exit at next open.
+        if in_position:
+            trend_up   = bool(row.get("trend_up", False))
+            trend_down = bool(row.get("trend_down", False))
+            if pos_direction == 1 and not trend_up:
+                pending_trend_exit = True
+            elif pos_direction == -1 and not trend_down:
+                pending_trend_exit = True
 
         # Look for a new entry only if flat and we have tomorrow's open available
         if not in_position and i + 1 < n:
@@ -338,6 +391,7 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                     profit_target = entry_price_raw - ATR_MULT * entry_atr
                     stop_loss = entry_price_raw + STOP_MULT * entry_atr
                 in_position = True
+                pending_trend_exit = False  # clear any stale flag
 
     blotter = pd.DataFrame(trades)
     if not blotter.empty:
