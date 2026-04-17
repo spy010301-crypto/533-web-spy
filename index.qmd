@@ -1,6 +1,6 @@
 ---
 title: "Donchian Channel Breakout Strategy"
-subtitle: "Systematic trend-following on GLD (SPDR Gold Trust)"
+subtitle: "Systematic trend-following on SCHD (Schwab U.S. Dividend Equity ETF)"
 author: "Peiyuan Shan"
 format:
   html:
@@ -10,8 +10,8 @@ format:
 ---
 
 ::: {.hero}
-# Donchian Channel Breakout on GLD
-A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out.
+# Donchian Channel Breakout on SCHD
+A transparent, rules-based trend-following system applied to a high-quality dividend-growth ETF: enter on 20-bar price breakouts, size exits with ATR, cap risk with a hard time-out.
 :::
 
 ```{python}
@@ -51,7 +51,13 @@ The strategy watches a rolling 20-day high/low envelope — the classic Donchian
 
 ## Asset Selection
 
-The candidate universe was an 8-ETF basket spanning equities, bonds, and commodities: SPY, QQQ, IWM, TLT, GLD, USO, XLE, and EEM. For each ETF we counted how many 20-bar Donchian breakouts occurred over a 3-year sample and divided by bar count to get a breakout frequency. **GLD** screened best: commodities in general showed stronger trending behaviour than equities over this window, and gold specifically produced the cleanest alternation of decisive trends and clear consolidations — exactly the regime that rewards channel breakouts. GLD is also highly liquid (tight spreads, large ADV) so the slippage assumption below is conservative.
+The candidate universe was an 8-ETF basket spanning equities, bonds, dividends, and commodities: SPY, QQQ, VIG, SCHD, TLT, GLD, XLE, and EEM. For each name we counted how many 20-bar Donchian breakouts occurred over a 3-year sample, then filtered for liquidity and trend persistence. **SCHD** was chosen as the strategy target for three reasons:
+
+1. **Dividend-growth quality.** SCHD tracks the Dow Jones U.S. Dividend 100 Index, which selects companies that have paid dividends for at least ten consecutive years and screens aggressively for cash-flow-to-debt, ROE, dividend yield, and 5-year dividend growth. The result is a book of mature, cash-generative businesses — the kind whose prices tend to trend smoothly rather than whipsaw, which suits a breakout system.
+2. **Clean trending behaviour.** Compared with higher-beta sector ETFs, SCHD shows fewer false breakouts and more sustained follow-through after the channel is breached. That is exactly the regime where a Donchian system shines: it sits out chop and rides the big directional moves.
+3. **Deep liquidity & tight spreads.** SCHD is one of the most widely held dividend ETFs; average daily volume runs in the millions of shares, so the 0.1% slippage assumption used below is conservative rather than optimistic.
+
+Note that the strategy here is price-only — dividends are stripped out of the return series. This is the right comparison for a breakout system (we're testing whether the *price* move is predictable), but it understates total-return performance that a real holder of SCHD would collect.
 
 ## Breakout Definition
 
@@ -117,7 +123,7 @@ fig.add_trace(go.Candlestick(
     x=px_df["date"],
     open=px_df["open"], high=px_df["high"],
     low=px_df["low"],   close=px_df["close"],
-    name="GLD",
+    name="SCHD",
     increasing_line_color="#1f8f5a",
     decreasing_line_color="#c0392b",
 ))
@@ -268,7 +274,7 @@ $(document).ready(function () {
 - **Slippage**: 0.1% of fill price applied on every entry and exit.
 - **Commission**: 0.1% per side, in addition to slippage.
 - **No pyramiding**: only one position is held at any time; new signals during an open trade are ignored.
-- **Data source**: live GLD daily bars from Interactive Brokers TWS (`ib_insync`); if TWS is unreachable the pipeline falls back to a synthetic GBM series with GLD-like parameters so the site always renders.
-- **No dividends**: GLD distributions are ignored; returns are price-only.
+- **Data source**: live SCHD daily bars from Interactive Brokers TWS (`ib_insync`); if TWS is unreachable the pipeline falls back to a synthetic GBM series calibrated to SCHD-like parameters (price ~$27.50 base, ~8% drift, ~16% vol) so the site always renders.
+- **No dividends**: SCHD quarterly distributions are ignored; returns are price-only. For a buy-and-hold comparison the total-return picture would be meaningfully better, but the breakout signal is defined on price so a price-only test is the right benchmark for this strategy.
 - **Walk-forward**: year 1 is used for indicator warm-up, years 2–3 are the out-of-sample test window reported above.
 - **Single-instrument**: results do not account for portfolio-level diversification or correlation effects.

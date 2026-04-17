@@ -3,7 +3,7 @@ Donchian Channel Breakout — full backtest engine.
 
 Pipeline
 --------
-1. fetch_data()        -> pull GLD daily bars from IBKR TWS, fall back to synthetic GBM.
+1. fetch_data()        -> pull SCHD daily bars from IBKR TWS, fall back to synthetic GBM.
 2. compute_atr()       -> Wilder's smoothing for Average True Range.
 3. detect_breakouts()  -> add donchian_upper/lower, atr, breakout_long/short columns.
 4. backtest()          -> simulate trades one-at-a-time with 3-exit logic.
@@ -46,7 +46,7 @@ SLIPPAGE = 0.001           # 0.1% per side
 IB_HOST = "127.0.0.1"
 IB_PORT = 7496
 IB_CLIENT_ID = 10
-TICKER = "GLD"
+TICKER = "SCHD"
 DURATION = "3 Y"
 BAR_SIZE = "1 day"
 
@@ -63,7 +63,7 @@ TRADING_DAYS_PER_YEAR = 252
 # --------------------------------------------------------------------------- #
 def fetch_data() -> pd.DataFrame:
     """
-    Pull 3 years of daily GLD bars from a local TWS session via ib_insync.
+    Pull 3 years of daily SCHD bars from a local TWS session via ib_insync.
     If the connection fails for any reason, generate a synthetic GBM series
     with comparable statistics so the rest of the pipeline always runs.
     """
@@ -94,22 +94,23 @@ def fetch_data() -> pd.DataFrame:
         return df
     except Exception as e:  # broad on purpose — any failure falls back
         print(f"[fetch_data] IBKR unreachable ({e}); generating synthetic GBM data.")
-        return _synthetic_gld(years=3)
+        return _synthetic_schd(years=3)
 
 
-def _synthetic_gld(years: int = 3, seed: int = 42) -> pd.DataFrame:
+def _synthetic_schd(years: int = 3, seed: int = 42) -> pd.DataFrame:
     """
-    Geometric Brownian Motion with realistic GLD-like parameters.
-    mu ~ 6% annualised, sigma ~ 15% annualised, starting price ~ 170.
+    Geometric Brownian Motion with realistic SCHD-like parameters.
+    Price-only drift ~ 8% annualised (dividends stripped out), sigma ~ 16%,
+    starting price ~ $27.50 which is roughly where SCHD traded 3 years ago.
     """
     rng = np.random.default_rng(seed)
     n = TRADING_DAYS_PER_YEAR * years
-    mu_daily = 0.06 / TRADING_DAYS_PER_YEAR
-    sigma_daily = 0.15 / math.sqrt(TRADING_DAYS_PER_YEAR)
+    mu_daily = 0.08 / TRADING_DAYS_PER_YEAR
+    sigma_daily = 0.16 / math.sqrt(TRADING_DAYS_PER_YEAR)
 
     # random walk of log returns
     rets = rng.normal(mu_daily, sigma_daily, size=n)
-    closes = 170.0 * np.exp(np.cumsum(rets))
+    closes = 27.5 * np.exp(np.cumsum(rets))
 
     # build plausible OHLC from the close path
     intraday_vol = sigma_daily * 0.6

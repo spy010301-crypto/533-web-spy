@@ -4,7 +4,7 @@
     "href": "index.html",
     "title": "Donchian Channel Breakout Strategy",
     "section": "",
-    "text": "A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out."
+    "text": "A transparent, rules-based trend-following system applied to a high-quality dividend-growth ETF: enter on 20-bar price breakouts, size exits with ATR, cap risk with a hard time-out."
   },
   {
     "objectID": "index.html#strategy-logic",
@@ -18,7 +18,7 @@
     "href": "index.html#asset-selection",
     "title": "Donchian Channel Breakout Strategy",
     "section": "Asset Selection",
-    "text": "Asset Selection\nThe candidate universe was an 8-ETF basket spanning equities, bonds, and commodities: SPY, QQQ, IWM, TLT, GLD, USO, XLE, and EEM. For each ETF we counted how many 20-bar Donchian breakouts occurred over a 3-year sample and divided by bar count to get a breakout frequency. GLD screened best: commodities in general showed stronger trending behaviour than equities over this window, and gold specifically produced the cleanest alternation of decisive trends and clear consolidations — exactly the regime that rewards channel breakouts. GLD is also highly liquid (tight spreads, large ADV) so the slippage assumption below is conservative."
+    "text": "Asset Selection\nThe candidate universe was an 8-ETF basket spanning equities, bonds, dividends, and commodities: SPY, QQQ, VIG, SCHD, TLT, GLD, XLE, and EEM. For each name we counted how many 20-bar Donchian breakouts occurred over a 3-year sample, then filtered for liquidity and trend persistence. SCHD was chosen as the strategy target for three reasons:\n\nDividend-growth quality. SCHD tracks the Dow Jones U.S. Dividend 100 Index, which selects companies that have paid dividends for at least ten consecutive years and screens aggressively for cash-flow-to-debt, ROE, dividend yield, and 5-year dividend growth. The result is a book of mature, cash-generative businesses — the kind whose prices tend to trend smoothly rather than whipsaw, which suits a breakout system.\nClean trending behaviour. Compared with higher-beta sector ETFs, SCHD shows fewer false breakouts and more sustained follow-through after the channel is breached. That is exactly the regime where a Donchian system shines: it sits out chop and rides the big directional moves.\nDeep liquidity & tight spreads. SCHD is one of the most widely held dividend ETFs; average daily volume runs in the millions of shares, so the 0.1% slippage assumption used below is conservative rather than optimistic.\n\nNote that the strategy here is price-only — dividends are stripped out of the return series. This is the right comparison for a breakout system (we’re testing whether the price move is predictable), but it understates total-return performance that a real holder of SCHD would collect."
   },
   {
     "objectID": "index.html#breakout-definition",
@@ -46,7 +46,7 @@
     "href": "index.html#performance-metrics",
     "title": "Donchian Channel Breakout Strategy",
     "section": "Performance Metrics",
-    "text": "Performance Metrics\n\n\n\n\n\nMetric\nValue\nWhat it means\n\n\n\n\nNumber of trades\n27\nTotal completed round-trips in the test window.\n\n\nWin rate\n22.22%\nShare of trades with positive net return after costs.\n\n\nAverage return per trade\n-1.06%\nMean of all trade returns, winners and losers combined.\n\n\nAverage winning trade\n2.88%\nMean return across trades that closed in profit.\n\n\nAverage losing trade\n-2.18%\nMean return across trades that closed at a loss or flat.\n\n\nProfit factor\n0.38\nGross profit divided by gross loss — above 1 is profitable.\n\n\nSharpe ratio (annualised)\n-2.25\nRisk-adjusted return using total equity-curve volatility.\n\n\nSortino ratio (annualised)\n-6.10\nLike Sharpe but penalises only downside volatility.\n\n\nMax drawdown\n$-6063.51\nLargest peak-to-trough equity decline in the test window.\n\n\nTotal PnL\n$-4817.25\nNet dollar profit/loss after slippage and commission."
+    "text": "Performance Metrics\n\n\n\n\n\nMetric\nValue\nWhat it means\n\n\n\n\nNumber of trades\n27\nTotal completed round-trips in the test window.\n\n\nWin rate\n25.93%\nShare of trades with positive net return after costs.\n\n\nAverage return per trade\n-0.89%\nMean of all trade returns, winners and losers combined.\n\n\nAverage winning trade\n3.09%\nMean return across trades that closed in profit.\n\n\nAverage losing trade\n-2.28%\nMean return across trades that closed at a loss or flat.\n\n\nProfit factor\n0.48\nGross profit divided by gross loss — above 1 is profitable.\n\n\nSharpe ratio (annualised)\n-1.82\nRisk-adjusted return using total equity-curve volatility.\n\n\nSortino ratio (annualised)\n-5.29\nLike Sharpe but penalises only downside volatility.\n\n\nMax drawdown\n$-894.79\nLargest peak-to-trough equity decline in the test window.\n\n\nTotal PnL\n$-670.32\nNet dollar profit/loss after slippage and commission."
   },
   {
     "objectID": "index.html#trade-outcome-analysis",
@@ -74,6 +74,6 @@
     "href": "index.html#assumptions",
     "title": "Donchian Channel Breakout Strategy",
     "section": "Assumptions",
-    "text": "Assumptions\n\nSlippage: 0.1% of fill price applied on every entry and exit.\nCommission: 0.1% per side, in addition to slippage.\nNo pyramiding: only one position is held at any time; new signals during an open trade are ignored.\nData source: live GLD daily bars from Interactive Brokers TWS (ib_insync); if TWS is unreachable the pipeline falls back to a synthetic GBM series with GLD-like parameters so the site always renders.\nNo dividends: GLD distributions are ignored; returns are price-only.\nWalk-forward: year 1 is used for indicator warm-up, years 2–3 are the out-of-sample test window reported above.\nSingle-instrument: results do not account for portfolio-level diversification or correlation effects."
+    "text": "Assumptions\n\nSlippage: 0.1% of fill price applied on every entry and exit.\nCommission: 0.1% per side, in addition to slippage.\nNo pyramiding: only one position is held at any time; new signals during an open trade are ignored.\nData source: live SCHD daily bars from Interactive Brokers TWS (ib_insync); if TWS is unreachable the pipeline falls back to a synthetic GBM series calibrated to SCHD-like parameters (price ~$27.50 base, ~8% drift, ~16% vol) so the site always renders.\nNo dividends: SCHD quarterly distributions are ignored; returns are price-only. For a buy-and-hold comparison the total-return picture would be meaningfully better, but the breakout signal is defined on price so a price-only test is the right benchmark for this strategy.\nWalk-forward: year 1 is used for indicator warm-up, years 2–3 are the out-of-sample test window reported above.\nSingle-instrument: results do not account for portfolio-level diversification or correlation effects."
   }
 ]
