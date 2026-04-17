@@ -42,12 +42,13 @@ RISK_FREE_RATE = 0.053     # annualised, for Sharpe / Sortino
 COMMISSION = 0.001         # 0.1% per side
 SLIPPAGE = 0.001           # 0.1% per side
 
-# Long-term trend filter: require the short MA to sit above the long MA
-# (i.e. classical uptrend) before allowing a long breakout, and symmetric
-# for shorts. If the filter flips while a position is open, the position
-# is flattened at the next bar's open.
-MA_SHORT_PERIOD = 20       # short moving average bars
-MA_LONG_PERIOD  = 60       # long moving average bars
+# Long-term trend filter: compare the average close of the most recent
+# 20 trading days against the average close of the 20 days BEFORE that.
+# If the recent window's average is higher, the broader trend is up and
+# long breakouts are allowed; if lower, shorts are allowed. If the filter
+# flips while a position is open, the position is flattened at the next
+# bar's open.
+TREND_WINDOW = 20          # bars in each of the two comparison windows
 
 # IBKR connection settings
 IB_HOST = "127.0.0.1"
@@ -202,30 +203,34 @@ def detect_breakouts(df: pd.DataFrame, lookback: int = LOOKBACK_PERIOD) -> pd.Da
     Trend filter
     ------------
     To reduce false breakouts during choppy, sideways tape, the long and
-    short signals are gated by a dual moving-average regime check:
+    short signals are gated by a window-vs-window comparison of average
+    closing prices:
 
-      * trend_up   is True when MA(short) > MA(long)  -> classical uptrend
-      * trend_down is True when MA(short) < MA(long)  -> classical downtrend
+      * recent_20d_avg = mean of the last 20 closes (including today)
+      * prior_20d_avg  = mean of the 20 closes BEFORE that window,
+                         i.e. bars -40 through -21
+      * trend_up   is True when recent_20d_avg > prior_20d_avg
+      * trend_down is True when recent_20d_avg < prior_20d_avg
 
     Long breakouts fire only during an uptrend; short breakouts only during
-    a downtrend. The MAs are computed on closes and evaluated at the SAME
-    bar as the signal (no extra shift), because they are already backward-
-    looking — they use data available at the bar's close, which is exactly
-    when the breakout itself is observed.
+    a downtrend. The averages are computed on closes and evaluated at the
+    SAME bar as the signal (no extra shift) because they are already
+    backward-looking — they use data available at the bar's close, which is
+    exactly when the breakout itself is observed.
 
     Output columns added:
-      donchian_upper   highest high of prior `lookback` bars
-      donchian_lower   lowest low  of prior `lookback` bars
-      atr              Wilder Average True Range (`ATR_PERIOD`)
-      ma_short         `MA_SHORT_PERIOD`-bar SMA of close
-      ma_long          `MA_LONG_PERIOD`-bar SMA of close
-      trend_up         MA_short > MA_long
-      trend_down       MA_short < MA_long
-      breakout_long    close > donchian_upper AND trend_up
-      breakout_short   close < donchian_lower AND trend_down
+      donchian_upper    highest high of prior `lookback` bars
+      donchian_lower    lowest low  of prior `lookback` bars
+      atr               Wilder Average True Range (`ATR_PERIOD`)
+      recent_20d_avg    mean close over last `TREND_WINDOW` bars
+      prior_20d_avg     mean close over the `TREND_WINDOW` bars before that
+      trend_up          recent_20d_avg > prior_20d_avg
+      trend_down        recent_20d_avg < prior_20d_avg
+      breakout_long     close > donchian_upper AND trend_up
+      breakout_short    close < donchian_lower AND trend_down
 
-    The first `max(lookback, MA_LONG_PERIOD)` rows have NaN indicator values,
-    so their breakout flags are naturally False.
+    The first `max(lookback, 2 * TREND_WINDOW)` rows have NaN indicator
+    values, so their breakout flags are naturally False.
     """
     out = df.copy()
     # rolling window of the PRIOR `lookback` bars — shift(1) enforces this
@@ -233,11 +238,13 @@ def detect_breakouts(df: pd.DataFrame, lookback: int = LOOKBACK_PERIOD) -> pd.Da
     out["donchian_lower"] = out["low"].rolling(lookback, min_periods=lookback).min().shift(1)
     out["atr"] = compute_atr(out, ATR_PERIOD)
 
-    # Dual-MA trend filter
-    out["ma_short"] = out["close"].rolling(MA_SHORT_PERIOD, min_periods=MA_SHORT_PERIOD).mean()
-    out["ma_long"]  = out["close"].rolling(MA_LONG_PERIOD,  min_periods=MA_LONG_PERIOD).mean()
-    out["trend_up"]   = (out["ma_short"] > out["ma_long"]).fillna(False)
-    out["trend_down"] = (out["ma_short"] < out["ma_long"]).fillna(False)
+    # Window-vs-window trend filter: compare the last 20 closes' mean
+    # against the mean of the 20 closes BEFORE that window.
+    rolling_20 = out["close"].rolling(TREND_WINDOW, min_periods=TREND_WINDOW).mean()
+    out["recent_20d_avg"] = rolling_20
+    out["prior_20d_avg"]  = rolling_20.shift(TREND_WINDOW)
+    out["trend_up"]   = (out["recent_20d_avg"] > out["prior_20d_avg"]).fillna(False)
+    out["trend_down"] = (out["recent_20d_avg"] < out["prior_20d_avg"]).fillna(False)
 
     raw_long  = (out["close"] > out["donchian_upper"]).fillna(False)
     raw_short = (out["close"] < out["donchian_lower"]).fillna(False)
@@ -257,14 +264,16 @@ def backtest(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     -----
     - Only one position at a time.
     - Entry: next-day open after a breakout signal that also passes the
-      trend filter (MA_short > MA_long for longs, MA_short < MA_long for
-      shorts). Signal observed at today's close; filled at tomorrow's open.
+      trend filter (recent_20d_avg > prior_20d_avg for longs; the reverse
+      for shorts). Signal observed at today's close; filled at tomorrow's
+      open.
     - Four possible exits:
         1. profit target       entry +/- ATR_MULT * ATR (intraday)
         2. stop-loss           entry -/+ STOP_MULT * ATR (intraday)
         3. time-out            forced exit at close after MAX_HOLDING_DAYS
-        4. trend-filter exit   if the MA regime flips against the position
-                               at today's close, flatten at tomorrow's open.
+        4. trend-filter exit   if the 20d-vs-20d regime flips against the
+                               position at today's close, flatten at
+                               tomorrow's open.
       Trend-filter exits are processed at the TOP of the next bar, before
       the intraday target/stop check, because the fill happens at the open.
     - Slippage and commission applied on BOTH entry and exit.
