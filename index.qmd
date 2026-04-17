@@ -1,7 +1,7 @@
 ---
 title: "Donchian Channel Breakout Strategy"
 subtitle: "Systematic trend-following on GLD (SPDR Gold Trust)"
-author: "FinTech 533"
+author: "Peiyuan Shan"
 format:
   html:
     toc: true
@@ -17,6 +17,7 @@ A transparent, rules-based trend-following system that enters on 20-bar price br
 ```{python}
 #| echo: false
 #| code-fold: true
+#| output: false
 #| label: run-backtest
 import json
 import subprocess
@@ -30,8 +31,12 @@ import plotly.graph_objects as go
 ROOT = Path(".").resolve()
 DATA = ROOT / "data"
 
-# Regenerate artifacts fresh on every render
-subprocess.run([sys.executable, "scripts/backtest.py"], check=True)
+# Regenerate artifacts fresh on every render (silence stdout/stderr)
+subprocess.run(
+    [sys.executable, "scripts/backtest.py"],
+    check=True,
+    capture_output=True,
+)
 
 blotter = pd.read_csv(DATA / "trade_blotter.csv", parse_dates=["entry_date", "exit_date"])
 equity  = pd.read_csv(DATA / "equity.csv", parse_dates=["date"])
@@ -52,17 +57,17 @@ The candidate universe was an 8-ETF basket spanning equities, bonds, and commodi
 
 A **breakout** is defined mechanically so there is zero discretion:
 
-- **Upper band** = highest high of the prior **20 bars** (`LOOKBACK_PERIOD = 20`).
+- **Upper band** = highest high of the prior **20 bars**.
 - **Lower band** = lowest low of the prior **20 bars**.
 - **Long signal** fires when today's close > upper band; the trade is filled at the next bar's open.
 - **Short signal** fires when today's close < lower band; filled at the next bar's open.
-- **ATR** uses Wilder smoothing over **14 bars** (`ATR_PERIOD = 14`).
-- **Profit target** = entry ± **2.0 × ATR** (`ATR_MULT = 2.0`).
-- **Stop-loss** = entry ∓ **1.0 × ATR** (`STOP_MULT = 1.0`).
-- **Time-out** = force-close at the close of bar 20 after entry (`MAX_HOLDING_DAYS = 20`).
-- **Size** = **100 shares** per trade (`POSITION_SIZE = 100`).
+- **ATR** uses Wilder smoothing over **14 bars**.
+- **Profit target** = entry ± **2.0 × ATR**.
+- **Stop-loss** = entry ∓ **1.0 × ATR**.
+- **Time-out** = force-close at the close of bar 20 after entry.
+- **Size** = **100 shares** per trade.
 - **Costs** = **0.1% slippage + 0.1% commission** applied on both entry and exit sides.
-- **Risk-free rate** = **5.3%** annualised, used for Sharpe / Sortino (`RISK_FREE_RATE = 0.053`).
+- **Risk-free rate** = **5.3%** annualised, used for Sharpe / Sortino.
 
 All channel values are shifted by one bar so only prior-bar information is ever used — no peek-ahead.
 

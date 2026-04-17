@@ -4,7 +4,7 @@
     "href": "index.html",
     "title": "Donchian Channel Breakout Strategy",
     "section": "",
-    "text": "A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out.\n[main] Starting Donchian breakout backtest.\n[fetch_data] IBKR unreachable (No module named 'ib_insync'); generating synthetic GBM data.\n[main] Train rows: 261  Test rows: 495  Split at 2024-05-25\n[main] Wrote 27 trades. Total PnL $-4817.25\n[main] Artifacts in /Users/shanpeiyuan/533-web-spy/.claude/worktrees/peaceful-sammet/data"
+    "text": "A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out."
   },
   {
     "objectID": "index.html#strategy-logic",
@@ -25,7 +25,7 @@
     "href": "index.html#breakout-definition",
     "title": "Donchian Channel Breakout Strategy",
     "section": "Breakout Definition",
-    "text": "Breakout Definition\nA breakout is defined mechanically so there is zero discretion:\n\nUpper band = highest high of the prior 20 bars (LOOKBACK_PERIOD = 20).\nLower band = lowest low of the prior 20 bars.\nLong signal fires when today’s close &gt; upper band; the trade is filled at the next bar’s open.\nShort signal fires when today’s close &lt; lower band; filled at the next bar’s open.\nATR uses Wilder smoothing over 14 bars (ATR_PERIOD = 14).\nProfit target = entry ± 2.0 × ATR (ATR_MULT = 2.0).\nStop-loss = entry ∓ 1.0 × ATR (STOP_MULT = 1.0).\nTime-out = force-close at the close of bar 20 after entry (MAX_HOLDING_DAYS = 20).\nSize = 100 shares per trade (POSITION_SIZE = 100).\nCosts = 0.1% slippage + 0.1% commission applied on both entry and exit sides.\nRisk-free rate = 5.3% annualised, used for Sharpe / Sortino (RISK_FREE_RATE = 0.053).\n\nAll channel values are shifted by one bar so only prior-bar information is ever used — no peek-ahead."
+    "text": "Breakout Definition\nA breakout is defined mechanically so there is zero discretion:\n\nUpper band = highest high of the prior 20 bars.\nLower band = lowest low of the prior 20 bars.\nLong signal fires when today’s close &gt; upper band; the trade is filled at the next bar’s open.\nShort signal fires when today’s close &lt; lower band; filled at the next bar’s open.\nATR uses Wilder smoothing over 14 bars.\nProfit target = entry ± 2.0 × ATR.\nStop-loss = entry ∓ 1.0 × ATR.\nTime-out = force-close at the close of bar 20 after entry.\nSize = 100 shares per trade.\nCosts = 0.1% slippage + 0.1% commission applied on both entry and exit sides.\nRisk-free rate = 5.3% annualised, used for Sharpe / Sortino.\n\nAll channel values are shifted by one bar so only prior-bar information is ever used — no peek-ahead."
   },
   {
     "objectID": "index.html#equity-curve",
