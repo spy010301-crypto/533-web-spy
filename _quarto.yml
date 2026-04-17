@@ -1,0 +1,31 @@
+project:
+  type: website
+  output-dir: docs
+  render:
+    - index.qmd
+
+website:
+  title: "Donchian Channel Breakout Strategy"
+  description: "Systematic breakout trading on GLD"
+  navbar:
+    background: primary
+    search: false
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc-location: right
+    toc-depth: 3
+    page-layout: article
+    code-copy: true
+    code-overflow: wrap
+    smooth-scroll: true
+    fig-width: 10
+    fig-height: 5
+
+execute:
+  freeze: auto
+  warning: false
+  message: false

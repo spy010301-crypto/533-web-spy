@@ -1,0 +1,17 @@
+{
+  "n_trades": 27,
+  "win_rate": 0.2222,
+  "avg_return_pct": -1.0552,
+  "avg_win_pct": 2.8835,
+  "avg_loss_pct": -2.1806,
+  "profit_factor": 0.3796,
+  "sharpe": -2.2478,
+  "sortino": -6.102,
+  "max_drawdown": -6063.51,
+  "total_pnl": -4817.25,
+  "split_date": "2024-05-25",
+  "ticker": "GLD",
+  "data_source": "synthetic",
+  "start_date": "2024-05-27",
+  "end_date": "2026-04-17"
+}

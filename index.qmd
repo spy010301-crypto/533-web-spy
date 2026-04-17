@@ -1,0 +1,269 @@
+---
+title: "Donchian Channel Breakout Strategy"
+subtitle: "Systematic trend-following on GLD (SPDR Gold Trust)"
+author: "FinTech 533"
+format:
+  html:
+    toc: true
+    toc-location: right
+    page-layout: article
+---
+
+::: {.hero}
+# Donchian Channel Breakout on GLD
+A transparent, rules-based trend-following system that enters on 20-bar price breakouts, sizes exits with ATR, and caps risk with a hard time-out.
+:::
+
+```{python}
+#| echo: false
+#| code-fold: true
+#| label: run-backtest
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+ROOT = Path(".").resolve()
+DATA = ROOT / "data"
+
+# Regenerate artifacts fresh on every render
+subprocess.run([sys.executable, "scripts/backtest.py"], check=True)
+
+blotter = pd.read_csv(DATA / "trade_blotter.csv", parse_dates=["entry_date", "exit_date"])
+equity  = pd.read_csv(DATA / "equity.csv", parse_dates=["date"])
+prices  = pd.read_csv(DATA / "price_data.csv", parse_dates=["date"])
+with open(DATA / "metrics.json") as f:
+    metrics = json.load(f)
+```
+
+## Strategy Logic
+
+The strategy watches a rolling 20-day high/low envelope — the classic Donchian channel — and waits for price to decisively pierce one of the boundaries. A close above the upper band signals that recent resistance has broken, the path of least resistance is up, and we go long the next morning; a close below the lower band does the symmetric thing on the short side. Every trade carries a pre-computed profit target of two ATRs and a stop-loss of one ATR from the entry, giving a 2:1 reward-to-risk geometry; if neither boundary is touched within twenty trading days the position is closed at the market so capital never sits idle in a range-bound trade. Only one position is open at a time, slippage and commission are charged on both legs, and no pyramiding is permitted.
+
+## Asset Selection
+
+The candidate universe was an 8-ETF basket spanning equities, bonds, and commodities: SPY, QQQ, IWM, TLT, GLD, USO, XLE, and EEM. For each ETF we counted how many 20-bar Donchian breakouts occurred over a 3-year sample and divided by bar count to get a breakout frequency. **GLD** screened best: commodities in general showed stronger trending behaviour than equities over this window, and gold specifically produced the cleanest alternation of decisive trends and clear consolidations — exactly the regime that rewards channel breakouts. GLD is also highly liquid (tight spreads, large ADV) so the slippage assumption below is conservative.
+
+## Breakout Definition
+
+A **breakout** is defined mechanically so there is zero discretion:
+
+- **Upper band** = highest high of the prior **20 bars** (`LOOKBACK_PERIOD = 20`).
+- **Lower band** = lowest low of the prior **20 bars**.
+- **Long signal** fires when today's close > upper band; the trade is filled at the next bar's open.
+- **Short signal** fires when today's close < lower band; filled at the next bar's open.
+- **ATR** uses Wilder smoothing over **14 bars** (`ATR_PERIOD = 14`).
+- **Profit target** = entry ± **2.0 × ATR** (`ATR_MULT = 2.0`).
+- **Stop-loss** = entry ∓ **1.0 × ATR** (`STOP_MULT = 1.0`).
+- **Time-out** = force-close at the close of bar 20 after entry (`MAX_HOLDING_DAYS = 20`).
+- **Size** = **100 shares** per trade (`POSITION_SIZE = 100`).
+- **Costs** = **0.1% slippage + 0.1% commission** applied on both entry and exit sides.
+- **Risk-free rate** = **5.3%** annualised, used for Sharpe / Sortino (`RISK_FREE_RATE = 0.053`).
+
+All channel values are shifted by one bar so only prior-bar information is ever used — no peek-ahead.
+
+## Equity Curve
+
+```{python}
+#| echo: false
+#| label: fig-equity
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=equity["date"], y=equity["equity"],
+    mode="lines", name="Cumulative PnL",
+    line=dict(color="#1f4e79", width=2),
+    fill="tozeroy", fillcolor="rgba(31,78,121,0.12)",
+))
+# shaded drawdown band
+running_max = equity["equity"].cummax()
+drawdown = equity["equity"] - running_max
+fig.add_trace(go.Scatter(
+    x=equity["date"], y=drawdown,
+    mode="lines", name="Drawdown",
+    line=dict(color="#c0392b", width=1, dash="dot"),
+    yaxis="y2",
+))
+fig.update_layout(
+    template="plotly_white",
+    height=420,
+    margin=dict(l=40, r=40, t=30, b=40),
+    yaxis=dict(title="Cumulative PnL ($)"),
+    yaxis2=dict(title="Drawdown ($)", overlaying="y", side="right", showgrid=False),
+    xaxis=dict(title=""),
+    legend=dict(orientation="h", y=1.1, x=0),
+)
+fig.show()
+```
+
+## Donchian Channel Chart
+
+```{python}
+#| echo: false
+#| label: fig-donchian
+# keep the chart readable — last ~500 bars plus indicator overlays and trade markers
+px_df = prices.tail(500).copy()
+
+fig = go.Figure()
+fig.add_trace(go.Candlestick(
+    x=px_df["date"],
+    open=px_df["open"], high=px_df["high"],
+    low=px_df["low"],   close=px_df["close"],
+    name="GLD",
+    increasing_line_color="#1f8f5a",
+    decreasing_line_color="#c0392b",
+))
+fig.add_trace(go.Scatter(
+    x=px_df["date"], y=px_df["donchian_upper"],
+    mode="lines", name="Donchian Upper",
+    line=dict(color="#2d6cb3", width=1.2),
+))
+fig.add_trace(go.Scatter(
+    x=px_df["date"], y=px_df["donchian_lower"],
+    mode="lines", name="Donchian Lower",
+    line=dict(color="#b33a3a", width=1.2),
+))
+
+# trade markers within the visible window
+visible_trades = blotter[
+    (blotter["entry_date"] >= px_df["date"].min()) &
+    (blotter["entry_date"] <= px_df["date"].max())
+]
+if not visible_trades.empty:
+    fig.add_trace(go.Scatter(
+        x=visible_trades["entry_date"], y=visible_trades["entry_price"],
+        mode="markers", name="Entry",
+        marker=dict(symbol="triangle-up", color="#1f4e79", size=10, line=dict(color="white", width=1)),
+    ))
+    fig.add_trace(go.Scatter(
+        x=visible_trades["exit_date"], y=visible_trades["exit_price"],
+        mode="markers", name="Exit",
+        marker=dict(symbol="x", color="#444", size=9),
+    ))
+
+fig.update_layout(
+    template="plotly_white",
+    height=520,
+    margin=dict(l=40, r=40, t=30, b=40),
+    xaxis=dict(title="", rangeslider=dict(visible=False)),
+    yaxis=dict(title="Price ($)"),
+    legend=dict(orientation="h", y=1.08, x=0),
+)
+fig.show()
+```
+
+## Performance Metrics
+
+```{python}
+#| echo: false
+#| label: tbl-metrics
+rows = [
+    ("Number of trades",         f"{metrics['n_trades']}",                    "Total completed round-trips in the test window."),
+    ("Win rate",                 f"{metrics['win_rate']*100:.2f}%",           "Share of trades with positive net return after costs."),
+    ("Average return per trade", f"{metrics['avg_return_pct']:.2f}%",         "Mean of all trade returns, winners and losers combined."),
+    ("Average winning trade",    f"{metrics['avg_win_pct']:.2f}%",            "Mean return across trades that closed in profit."),
+    ("Average losing trade",     f"{metrics['avg_loss_pct']:.2f}%",           "Mean return across trades that closed at a loss or flat."),
+    ("Profit factor",            f"{metrics['profit_factor']:.2f}",           "Gross profit divided by gross loss — above 1 is profitable."),
+    ("Sharpe ratio (annualised)",  f"{metrics['sharpe']:.2f}",                "Risk-adjusted return using total equity-curve volatility."),
+    ("Sortino ratio (annualised)", f"{metrics['sortino']:.2f}",               "Like Sharpe but penalises only downside volatility."),
+    ("Max drawdown",             f"${metrics['max_drawdown']:.2f}",           "Largest peak-to-trough equity decline in the test window."),
+    ("Total PnL",                f"${metrics['total_pnl']:.2f}",              "Net dollar profit/loss after slippage and commission."),
+]
+metrics_df = pd.DataFrame(rows, columns=["Metric", "Value", "What it means"])
+from IPython.display import HTML
+HTML(metrics_df.to_html(index=False, classes="metrics-table", escape=False))
+```
+
+## Trade Outcome Analysis
+
+Every position is forced to close through one of three doors: the **profit target** (entry ± 2 × ATR), the **stop-loss** (entry ∓ 1 × ATR), or a **time-out** after 20 trading days. The stop-loss is tested each bar against the bar's low (for longs) or high (for shorts); if the stop and the target are both reachable on the same bar, the stop is assumed to fill first — a conservative choice that avoids flattering the numbers.
+
+```{python}
+#| echo: false
+#| label: fig-outcomes
+if blotter.empty:
+    print("No trades generated in the test window.")
+else:
+    counts = blotter["outcome"].value_counts().reindex(
+        ["Profit target", "Stop-loss", "Time-out"], fill_value=0
+    ).reset_index()
+    counts.columns = ["Outcome", "Count"]
+    fig = px.bar(
+        counts, x="Outcome", y="Count",
+        color="Outcome",
+        color_discrete_map={
+            "Profit target": "#1f8f5a",
+            "Stop-loss":     "#c0392b",
+            "Time-out":      "#5d6d7e",
+        },
+        text="Count",
+    )
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        template="plotly_white", height=380,
+        margin=dict(l=40, r=40, t=30, b=40),
+        showlegend=False,
+        yaxis=dict(title="Number of trades"),
+        xaxis=dict(title=""),
+    )
+    fig.show()
+```
+
+## Trade Blotter
+
+```{python}
+#| echo: false
+#| label: tbl-blotter
+from IPython.display import HTML
+
+display_cols = [
+    "entry_date", "exit_date", "entry_price", "exit_price",
+    "quantity", "direction", "outcome", "pnl", "trade_return",
+]
+if blotter.empty:
+    HTML("<p><em>No trades executed in the test window.</em></p>")
+else:
+    view = blotter[display_cols].copy()
+    view["entry_date"] = view["entry_date"].dt.strftime("%Y-%m-%d")
+    view["exit_date"]  = view["exit_date"].dt.strftime("%Y-%m-%d")
+    view["trade_return"] = (view["trade_return"] * 100).round(3).astype(str) + "%"
+
+    table_html = view.to_html(
+        index=False, table_id="trade-blotter", classes="display compact",
+        escape=False,
+    )
+    datatable_script = """
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" />
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script>
+$(document).ready(function () {
+  $('#trade-blotter').DataTable({
+    pageLength: 15,
+    order: [[0, 'asc']],
+    lengthMenu: [[10, 15, 25, 50, -1], [10, 15, 25, 50, "All"]]
+  });
+});
+</script>
+"""
+    HTML(table_html + datatable_script)
+```
+
+## Download
+
+::: {.download-link}
+[Download trade_blotter.csv](data/trade_blotter.csv)
+:::
+
+## Assumptions
+
+- **Slippage**: 0.1% of fill price applied on every entry and exit.
+- **Commission**: 0.1% per side, in addition to slippage.
+- **No pyramiding**: only one position is held at any time; new signals during an open trade are ignored.
+- **Data source**: live GLD daily bars from Interactive Brokers TWS (`ib_insync`); if TWS is unreachable the pipeline falls back to a synthetic GBM series with GLD-like parameters so the site always renders.
+- **No dividends**: GLD distributions are ignored; returns are price-only.
+- **Walk-forward**: year 1 is used for indicator warm-up, years 2–3 are the out-of-sample test window reported above.
+- **Single-instrument**: results do not account for portfolio-level diversification or correlation effects.
